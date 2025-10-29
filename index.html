@@ -7,6 +7,7 @@
 <!-- Load HLS.js Library --><script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <style>
 /* 1. Global Styles and Setup */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 body {
 background-color: #000; /* Pure black background */
 color: #fff;
@@ -65,6 +66,30 @@ border-radius: 0;
 .hls-player-container.cursor-hidden {
 cursor: none;
 }
+
+/* 3. UPDATED: Loading Indicator Styling (Background removed for transparency) */
+.loading-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    /* Keep transform for perfect centering */
+    transform: translate(-50%, -50%); 
+    width: 80px; /* Set fixed size for the GIF container */
+    height: 80px;
+    z-index: 50; 
+    display: none; /* Hidden by default, controlled by JS */
+    /* BACKGROUND IS NOW TRANSPARENT */
+    border-radius: 12px;
+    padding: 5px;
+}
+
+.loading-indicator img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+/* --- END Loading Indicator Styling --- */
+
 
 /* 4. Controls Overlay (The magic layer for interaction) */
 .player-controls-overlay {
@@ -357,10 +382,6 @@ z-index: 10;
 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
-.tracks-menu {
-min-width: 380px; /* Wider for two columns */
-}
-
 .tracks-menu.open, .speed-menu.open {
 display: block;
 }
@@ -451,6 +472,16 @@ background: rgba(255, 255, 255, 0.15); /* Slight background for emphasis */
 <div id="url-display" style="position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 0.75rem; color: #fff; background: rgba(0, 0, 0, 0.5); padding: 4px 8px; border-radius: 4px; max-width: 90%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;"></div>
 
 <!-- The main video element - NO controls attribute. --><video id="hls-video" preload="auto"></video>
+
+<!-- UPDATED: Loading Indicator using the GIF (Background is now transparent) -->
+<div id="loading-indicator" class="loading-indicator">
+    <img 
+        src="https://i.giphy.com/FgH5xSNjGHZsiYPWAX.webp" 
+        alt="Video is loading or rebuffering" 
+        style="width: 100%; height: 100%; object-fit: contain;"
+        onerror="this.onerror=null; this.src='https://placehold.co/80x80/6366f1/ffffff?text=LOADING';"
+    />
+</div>
 
 <!-- Custom Message Box --><div id="message-box" class="message-box" style="display: none;"></div>
 
@@ -560,7 +591,7 @@ const HLS_URL = urlParams.get('url') || 'https://vidmmo.com/hls/PeTnJxnsuhCOtujX
 const PLAY_SVG_INNER = '<path d="M5 2.7a1 1 0 0 1 1.48-.88l16.93 9.3a1 1 0 0 1 0 1.76l-16.93 9.3A1 1 0 0 1 5 21.31z"/>';
 const PAUSE_SVG_INNER = '<path fill-rule="evenodd" d="M4.5 3a.5.5 0 0 0-.5.5v17c0 .28.22.5.5.5h5a.5.5 0 0 0 .5-.5v-17a.5.5 0 0 0-.5-.5zm10 0a.5.5 0 0 0-.5.5v17c0 .28.22.5.5.5h5a.5.5 0 0 0 .5-.5v-17a.5.5 0 0 0-.5-.5z" clip-rule="evenodd"/>';
 const SPEAKER_SVG_INNER = '<path fill-rule="evenodd" d="M11 4a1 1 0 0 0-1.7-.7L4.58 8H1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h3.59l4.7 4.7A1 1 0 0 0 11 20zM5.7 9.7 9 6.42V17.6l-3.3-3.3-.29-.29H2v-4h3.41zm11.37-4.77a10 10 0 0 1 0 14.14l-1.41-1.41a8 8 0 0 0 0-11.32zm-2.83 2.83a6 6 0 0 1 0 8.48l-1.41-1.41a4 4 0 0 0 0-5.66z" clip-rule="evenodd"/>';
-const MUTE_SVG_INNER = '<path fill-rule="evenodd" d="M11 4a1 1 0 0 0-1.7-.7L4.58 8H1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h3.59l4.7 4.7A1 1 0 0 0 11 20zM5.7 9.7 9 6.42V17.6l-3.3-3.3-.29-.29H2v-4h3.41zm9.6 0 2.29 2.3-2.3 2.3 1.42 1.4L19 13.42l2.3 2.3 1.4-1.42-2.28-2.3 2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3z" clip-rule="evenodd"/>';
+const MUTE_SVG_INNER = '<path fill-rule="evenodd" d="M11 4a1 1 0 0 0-1.7-.7L4.58 8H1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h3.59l4.7 4.7A1 1 0 0 0 11 20zM5.7 9.7 9 6.42V17.6l-3.3-3.3-.29-.29H2v-4h3.41zm9.6 0 2.29 2.3-2.3 2.3 1.42 1.4L19 13.42l2.3 2.3 1.4-1.42-2.28-2.3 2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3z" clip-rule="evenodd"/>';
 const BACK_10_SVG_INNER = '<path fill-rule="evenodd" d="M11.02 2.05A10 10 0 1 1 2 12H0a12 12 0 1 0 5-9.75V1H3v4a1 1 0 0 0 1 1h4V4H6a10 10 0 0 1 5.02-1.95M2 4v3h3v2H1a1 1 0 0 1-1-1V4zm12.13 12q-.88 0-1.53-.42-.64-.44-1-1.22a5 5 0 0 1-.35-1.86q0-1.05.35-1.85.36-.79 1-1.22A2.7 2.7 0 0 1 14.13 9a2.65 2.65 0 0 1 2.52 1.65q.35.79.35 1.85 0 1.07-.35 1.86a3 3 0 0 1-1.01 1.22 2.7 2.7 0 0 1-1.52.42m0-1.35q.59 0 .91-.56.34-.56.34-1.59 0-1.01-.34-1.58-.33-.57-.91-.57-.6 0-.92.57-.34.56-.34 1.58t.34 1.6q.33.54.91.55m-5.53 1.2v-5.13l-1.6.42V9.82l3.2-.8v6.84z" clip-rule="evenodd"/>';
 const FORWARD_10_SVG_INNER = '<path fill-rule="evenodd" d="M6.44 3.69A10 10 0 0 1 18 4h-2v2h4a1 1 0 0 0 1-1V1h-2v1.25A12 12 0 1 0 24 12h-2A10 10 0 1 1 6.44 3.69M22 4v3h-3v2h4a1 1 0 0 0 1-1V4zm-9.4 11.58q.66.42 1.53.42a2.7 2.7 0 0 0 1.5-.42q-.64-.44-1.02-1.22a4.5 4.5 0 0 0-.35-1.85q0-1.05.35-1.85A2.65 2.65 0 0 0 14.13 9a2.7 2.7 0 0 0-1.53.43q-.64.44-1 1.22a4.5 4.5 0 0 0-.35 1.85q0 1.07.35 1.86.36.78 1 1.22m2.44-1.49q-.33.56-.91.56-.6 0-.92-.56-.34-.56-.34-1.59 0-1.01.34-1.58.33-.57.91-.57.6 0 .92.57.34.56.34 1.58t-.34 1.6" clip-rule="evenodd"/>';
 const ENTER_FULLSCREEN_SVG_INNER = '<path fill-rule="evenodd" d="M2 3h7v2H2v4H0V5c0-1.1.9-2 2-2zm15 0h5a2 2 0 0 1 2 2v4h-2V5h-5zm0 16v-5h2v5h5v2h-7a2 2 0 0 1-2-2zm-12 2h7v-2H2v-4H0v4a2 2 0 0 0 2 2z" clip-rule="evenodd"/>';
@@ -572,6 +603,7 @@ const video = document.getElementById('hls-video');
 
 // --- Elements References ---
 const urlDisplay = document.getElementById('url-display');
+const loadingIndicator = document.getElementById('loading-indicator'); // Reference to the GIF container
 const centerControlsGroup = document.getElementById('center-controls-group');
 const centerBack10Btn = document.getElementById('center-back-10-btn');
 const centerForward10Btn = document.getElementById('center-forward-10-btn');
@@ -590,7 +622,7 @@ const container = document.querySelector('.hls-player-container');
 const controlsOverlay = document.querySelector('.player-controls-overlay');
 const msgBox = document.getElementById('message-box');
 
-// NEW: Playback Speed Elements
+// Playback Speed Elements
 const speedBtn = document.getElementById('speed-btn');
 const speedMenu = document.getElementById('speed-menu');
 const SPEED_OPTIONS = [
@@ -610,6 +642,10 @@ const tracksContent = document.getElementById('tracks-content'); // New containe
 
 let hls;
 let lastVolume = 1;
+
+// --- NEW STATE VARIABLE: Tracks if the loading GIF is visible ---
+let isLoadingVisible = false;
+// --- END NEW STATE VARIABLE ---
 
 // --- Language Mapping for Display (Unchanged) ---
 const LANG_MAP = {
@@ -661,6 +697,15 @@ msgBox.style.display = 'none';
 }, duration);
 };
 
+// Function to control the visibility of the GIF loading indicator
+const toggleLoadingIndicator = (show) => {
+    loadingIndicator.style.display = show ? 'block' : 'none';
+    isLoadingVisible = show; // Update the state flag
+
+    // Whenever the loading state changes, re-evaluate controls visibility
+    checkActivity(); 
+};
+
 const formatTime = (seconds) => {
 if (isNaN(seconds) || seconds < 0) return '0:00';
 seconds = Math.floor(seconds);
@@ -697,19 +742,25 @@ const postTimeUpdateToParent = () => {
     }
 }
 
-// --- Control Visibility Functions ---
+// --- Control Visibility Functions (MODIFIED TO RESPECT isLoadingVisible) ---
 
 const toggleControlsVisibility = (show) => {
-// Controls must ALWAYS be visible if the video is paused
+// Always show the bottom overlay if paused or if activity dictates
 if (video.paused || show) {
 controlsOverlay.classList.add('visible');
-centerControlsGroup.classList.add('visible');
 container.classList.remove('cursor-hidden');
 } else {
-// Hide when video is playing AND we are asked to hide
 controlsOverlay.classList.remove('visible');
-centerControlsGroup.classList.remove('visible');
 container.classList.add('cursor-hidden');
+}
+
+// CENTER CONTROLS: Only show the center controls if they are supposed to be shown 
+// AND the loading indicator is NOT visible.
+// This is the logic that hides the center button when buffering/seeking.
+if (!isLoadingVisible && (video.paused || show)) { 
+    centerControlsGroup.classList.add('visible');
+} else {
+    centerControlsGroup.classList.remove('visible');
 }
 };
 
@@ -798,7 +849,7 @@ const updateBufferDisplay = () => {
 // --- END Buffer Display Logic ---
 
 
-// --- PLAYBACK SPEED LOGIC UTILITIES (NEW) ---
+// --- PLAYBACK SPEED LOGIC UTILITIES (Unchanged) ---
 
 // Updates the active class on a speed option
 const updateSpeedList = (activeRate) => {
@@ -1003,11 +1054,27 @@ tracksBtn.style.display = contentAdded ? 'block' : 'none';
 const initHlsPlayer = () => {
     // Update the URL display element
     urlDisplay.textContent = `Source: ${HLS_URL}`;
+    // Show loading indicator initially
+    toggleLoadingIndicator(true); 
 
     if (Hls.isSupported()) {
         hls = new Hls();
         hls.loadSource(HLS_URL);
         hls.attachMedia(video);
+
+        // HLS EVENTS FOR BUFFERING
+        hls.on(Hls.Events.BUFFERING, () => {
+            // Show indicator when hls.js starts buffering data
+            toggleLoadingIndicator(true);
+        });
+
+        hls.on(Hls.Events.BUFFERED, () => {
+            // Hide indicator when hls.js finishes buffering, but only if video is actively playing
+            if (!video.paused && !video.seeking) {
+                toggleLoadingIndicator(false);
+            }
+        });
+
 
         // MANIFEST PARSED: Populate the unified menu
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -1032,6 +1099,7 @@ const initHlsPlayer = () => {
 
         hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
+        toggleLoadingIndicator(false); // Hide spinner on fatal error
         showMessage(`Fatal HLS Error: ${data.type}. Trying to recover...`, 5000);
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
         hls.recoverMediaError();
@@ -1048,8 +1116,10 @@ const initHlsPlayer = () => {
         showMessage('Using native HLS playback (Safari). Track control buttons may be unavailable.', 4000);
         // Hide button for native playback as control is inconsistent
         tracksBtn.style.display = 'none';
+        toggleLoadingIndicator(true); // Keep spinner visible until metadata loaded for native players
     } else {
         showMessage('Your browser does not support HLS playback.', 5000);
+        toggleLoadingIndicator(false); // Hide spinner if unsupported
     }
 };
 
@@ -1131,6 +1201,26 @@ updatePlayPauseIcons();
 toggleControlsVisibility(true); // Always show controls when paused
 });
 
+// NEW: Video event listeners for buffering/stalling
+video.addEventListener('waiting', () => {
+    // Show indicator when video stalls (initial load, seeking, or re-buffering)
+    // This calls toggleControlsVisibility(true) which then checks !isLoadingVisible 
+    // and correctly hides the center controls.
+    toggleLoadingIndicator(true);
+});
+
+video.addEventListener('playing', () => {
+    // Hide indicator when video starts/resumes playback
+    toggleLoadingIndicator(false);
+});
+
+video.addEventListener('seeked', () => {
+    // Hide indicator when seeking completes, but only if playback is not stalled immediately after seek
+    if (!video.paused && !video.waiting) { 
+        toggleLoadingIndicator(false);
+    }
+});
+
 
 // 4. Time Update and Progress Bar
 video.addEventListener('loadedmetadata', () => {
@@ -1138,6 +1228,7 @@ seekSlider.max = Math.floor(video.duration);
 timeRemainingDisplay.textContent = formatTime(video.duration);
 updateSeekProgress(video.currentTime, video.duration);
 updateBufferDisplay(); // Initial buffer after metadata load
+toggleLoadingIndicator(false); // Hide on first load completion
 });
 
 video.addEventListener('timeupdate', () => {
