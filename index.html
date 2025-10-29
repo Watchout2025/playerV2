@@ -25,10 +25,16 @@ overflow: hidden; /* Prevent scrollbars */
         .volume-controls{
         width: auto !important;
         }
+        #play-pause-btn, #back-10-btn, #forward-10-btn{
+        display: none;
+        }
         .volume-controls input {
             display: none !important;
         }
     }
+#play-pause-btn, #volume-btn{
+padding-left: 0px;
+}
 /* 2. Player Container (Defines global CSS variables for colors) */
 .hls-player-container {
 position: relative;
@@ -337,7 +343,6 @@ display: block;
 display: flex;
 align-items: center;
 width: 120px;
-margin-left: 15px;
 }
 .volume-controls input {
 -webkit-appearance: none;
