@@ -468,9 +468,6 @@ background: rgba(255, 255, 255, 0.15); /* Slight background for emphasis */
 <body>
 
 <div class="hls-player-container">
-<!-- UI element to display the currently loaded stream URL -->
-<div id="url-display" style="position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 0.75rem; color: #fff; background: rgba(0, 0, 0, 0.5); padding: 4px 8px; border-radius: 4px; max-width: 90%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;"></div>
-
 <!-- The main video element - NO controls attribute. --><video id="hls-video" preload="auto"></video>
 
 <!-- UPDATED: Loading Indicator using the GIF (Background is now transparent) -->
@@ -1052,8 +1049,6 @@ tracksBtn.style.display = contentAdded ? 'block' : 'none';
 
 // --- HLS.JS Initialization ---
 const initHlsPlayer = () => {
-    // Update the URL display element
-    urlDisplay.textContent = `Source: ${HLS_URL}`;
     // Show loading indicator initially
     toggleLoadingIndicator(true); 
 
