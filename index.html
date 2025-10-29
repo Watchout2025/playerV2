@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modern Custom HLS Player (Full Screen)</title>
+<!-- Load HLS.js Library --><script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<style>
+/* 1. Global Styles and Setup */
+body {
+background-color: #000; /* Pure black background */
+color: #fff;
+font-family: 'Inter', sans-serif;
+display: flex;
+justify-content: center;
+align-items: center;
+width: 100vw;
+height: 100vh;
+margin: 0;
+padding: 0;
+overflow: hidden; /* Prevent scrollbars */
+}
+
+/* 2. Player Container (Defines global CSS variables for colors) */
+.hls-player-container {
+position: relative;
+width: 100vw;
+height: 100vh;
+max-width: none;
+margin: 0;
+background: #000;
+box-shadow: none;
+border-radius: 0;
+overflow: hidden;
+cursor: default;
+
+/* --- Define global player colors here for all descendants to inherit --- */
+--seek-color: #e60712; /* BOLD RED COLOR */
+--track-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Video element must also fill the container */
+#hls-video {
+width: 100%;
+height: 100%;
+display: block;
+object-fit: contain; /* Ensures video frame fits without cropping */
+}
+
+/* Fullscreen handling */
+.hls-player-container:-webkit-full-screen {
+width: 100vw;
+height: 100vh;
+max-width: none;
+border-radius: 0;
+}
+.hls-player-container:fullscreen {
+width: 100vw;
+height: 100vh;
+max-width: none;
+border-radius: 0;
+}
+
+/* Custom cursor for modern feel when controls are hidden/video is playing */
+.hls-player-container.cursor-hidden {
+cursor: none;
+}
+
+/* 4. Controls Overlay (The magic layer for interaction) */
+.player-controls-overlay {
+position: absolute;
+top: 0;
+bottom: 0;
+left: 0;
+right: 0;
+height: 100%;
+display: flex;
+flex-direction: column;
+justify-content: flex-end;
+transition: opacity 0.2s ease;
+opacity: 0;
+pointer-events: none;
+user-select: none;
+background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 35%);
+}
+
+.player-controls-overlay.visible {
+opacity: 1;
+pointer-events: auto;
+}
+
+/* Message Box for errors/info */
+.message-box {
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+padding: 10px 20px;
+background: rgba(0, 0, 0, 0.8);
+color: #ffcc00;
+border-radius: 8px;
+font-weight: bold;
+z-index: 20;
+pointer-events: none;
+}
+
+/* Center Controls Group */
+.center-controls-group {
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+display: flex;
+align-items: center;
+gap: 40px;
+z-index: 10;
+transition: opacity 0.2s ease;
+opacity: 0;
+pointer-events: none;
+}
+
+.center-controls-group.visible {
+opacity: 1;
+pointer-events: auto;
+}
+
+/* Base style for all center buttons */
+.center-play-pause-btn, .center-seek-btn {
+background: rgba(0, 0, 0, 0.3);
+border: none;
+border-radius: 50%;
+display: flex;
+justify-content: center;
+align-items: center;
+cursor: pointer;
+transition: transform 0.2s ease;
+}
+
+/* Specific sizing */
+.center-play-pause-btn {
+width: 80px;
+height: 80px;
+}
+.center-seek-btn {
+width: 60px;
+height: 60px;
+}
+
+/* Icon style for all center buttons */
+.center-play-pause-btn svg, .center-seek-btn svg {
+fill: white;
+width: 40px;
+height: 40px;
+transition: transform 0.1s ease;
+}
+
+/* Hover effects for all center buttons */
+.center-play-pause-btn:hover, .center-seek-btn:hover {
+background: rgba(0, 0, 0, 0.5);
+transform: scale(1.1);
+}
+
+/* 5. Progress Bar & Time Container (MODIFIED FOR BUFFER) */
+.progress-bar-container {
+width: 100%;
+height: 30px;
+padding: 0 15px;
+box-sizing: border-box;
+display: flex;
+align-items: center;
+}
+
+/* Wrapper for seek slider and buffer track */
+.progress-bar-wrapper {
+    flex-grow: 1;
+    position: relative;
+    height: 10px; /* Reference height for centering */
+    margin-right: 15px;
+}
+
+/* Buffer Track Styling */
+.buffer-track {
+    position: absolute;
+    top: 100%; 
+    left: 0;
+    height: 8px; /* Matches seek slider track height */
+    width: 0; /* Initial width - updated by JS */
+    background: rgba(255, 255, 255, 0.3); /* Translucent grey buffer */
+    border-radius: 4px;
+    z-index: 1; /* Below the seek slider, above the wrapper background */
+    pointer-events: none;
+    transform: translateY(-40%); 
+}
+
+#seek-slider {
+position: relative;
+z-index: 2; /* Ensure slider is on top of buffer */
+width: 100%;
+height: 8px;
+-webkit-appearance: none;
+appearance: none;
+cursor: pointer;
+border-radius: 4px;
+margin: 0; /* No margin here, use wrapper margin */
+
+/* Element-specific state variable */
+--seek-before-width: 0%; 
+
+/* Uses inherited --seek-color for the filled progress. The base track color is applied here */
+background: linear-gradient(to right, var(--seek-color) var(--seek-before-width), var(--track-color) var(--seek-before-width));
+}
+
+/* Seek Slider Thumb Customization (Chrome/Safari) */
+#seek-slider::-webkit-slider-thumb {
+-webkit-appearance: none;
+appearance: none;
+width: 14px;
+height: 14px;
+background: var(--seek-color); /* Uses inherited --seek-color */
+border-radius: 50%;
+cursor: pointer;
+box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+transform: scale(1.0);
+transition: transform 0.1s ease;
+}
+#seek-slider:hover::-webkit-slider-thumb {
+transform: scale(1.2);
+}
+
+/* Firefox Progress Bar Fill */
+#seek-slider::-moz-range-progress {
+background-color: var(--seek-color); /* Uses inherited --seek-color */
+height: 8px;
+}
+
+/* Firefox Thumb */
+#seek-slider::-moz-range-thumb {
+background: var(--seek-color); /* Uses inherited --seek-color */
+border: none;
+border-radius: 50%;
+height: 14px;
+width: 14px;
+cursor: pointer;
+}
+
+/* Time Remaining Display Style */
+.time-remaining-display {
+font-size: 0.9em;
+color: #ccc;
+font-family: monospace;
+width: 4.5em;
+text-align: right;
+}
+
+
+/* 6. Main Control Bar */
+.controls-bar {
+display: flex;
+justify-content: space-between;
+align-items: center;
+padding: 10px 20px 15px 20px;
+color: white;
+}
+.controls-left {
+display: flex;
+align-items: center;
+gap: 5px;
+}
+.controls-right {
+display: flex;
+align-items: center;
+gap: 10px;
+}
+
+
+/* 7. Button Styling */
+.control-btn {
+background: none;
+border: none;
+color: white;
+padding: 8px;
+margin: 0 2px;
+cursor: pointer;
+line-height: 1;
+transition: transform 0.1s ease, opacity 0.1s ease;
+opacity: 0.9;
+}
+.control-btn:hover {
+opacity: 1;
+transform: scale(1.05);
+}
+.control-btn:active {
+transform: scale(0.95);
+}
+
+.control-btn svg {
+fill: currentColor;
+width: 22px;
+height: 22px;
+display: block;
+}
+
+/* 8. Volume Controls */
+.volume-controls {
+display: flex;
+align-items: center;
+width: 120px;
+margin-left: 15px;
+}
+.volume-controls input {
+-webkit-appearance: none;
+appearance: none;
+height: 4px;
+border-radius: 2px;
+cursor: pointer;
+margin: 0 5px;
+
+/* Element-specific state variable */
+--volume-before-width: 100%; 
+/* Uses inherited --seek-color for the filled part */
+background: linear-gradient(to right, var(--seek-color) var(--volume-before-width), rgba(255, 255, 255, 0.5) var(--volume-before-width));
+}
+/* Volume Slider Thumb (Same color as progress bar for consistency) */
+.volume-controls input::-webkit-slider-thumb {
+-webkit-appearance: none;
+appearance: none;
+width: 10px;
+height: 10px;
+background: var(--seek-color); /* Uses inherited --seek-color */
+border-radius: 50%;
+}
+/* Volume Slider Progress for Firefox */
+.volume-controls input::-moz-range-progress {
+background-color: var(--seek-color); /* Uses inherited --seek-color */
+}
+
+/* 9. Tracks & Speed Dropdowns (Unified Styling) */
+.tracks-dropdown, .speed-dropdown {
+position: relative;
+margin: 0 5px;
+}
+
+.tracks-menu, .speed-menu {
+position: absolute;
+bottom: 120%;
+right: 0;
+list-style: none;
+padding: 0;
+margin: 0;
+background: rgba(0, 0, 0, 0.9);
+border-radius: 8px;
+min-width: 150px; /* Default width for speed menu */
+max-height: 400px;
+overflow: hidden; 
+display: none;
+z-index: 10;
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.tracks-menu {
+min-width: 380px; /* Wider for two columns */
+}
+
+.tracks-menu.open, .speed-menu.open {
+display: block;
+}
+
+/* Tracks Menu Inner structure */
+.tracks-content {
+display: flex;
+flex-direction: row; 
+max-height: 400px; 
+}
+
+/* Individual list columns */
+.track-column {
+flex: 1;
+padding: 10px 0;
+max-height: 380px; /* Max height for scrollable content */
+overflow-y: auto;
+}
+
+/* Separator line between columns */
+.track-column:first-child {
+border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Speed Menu Inner structure (Simple list) */
+.speed-menu ul {
+    list-style: none;
+    padding: 10px 0;
+    margin: 0;
+}
+
+/* List item and header styling (Applies to both menus) */
+.menu-header {
+font-size: 0.9em;
+padding: 10px 15px 5px;
+font-weight: bold;
+color: #ccc;
+cursor: default;
+background: rgba(255, 255, 255, 0.05);
+margin-bottom: 5px;
+text-transform: uppercase;
+}
+
+.speed-menu li, .track-column li {
+padding: 8px 15px;
+cursor: pointer;
+font-size: 0.9em;
+white-space: nowrap;
+color: #888; /* Dark grey for unselected tracks */
+transition: background 0.1s ease, color 0.1s ease;
+list-style: none; 
+}
+.speed-menu li:hover, .track-column li:hover {
+background: rgba(255, 255, 255, 0.1);
+color: #fff; /* White text on hover */
+}
+.speed-menu li.active, .track-column li.active {
+color: #fff; /* White for selected track */
+font-weight: bold;
+background: rgba(255, 255, 255, 0.15); /* Slight background for emphasis */
+}
+
+/* Mobile Responsiveness: Stack columns vertically */
+@media (max-width: 600px) {
+    .tracks-menu {
+        min-width: 280px; /* Adjusted size for small screens */
+        max-height: 90vh;
+    }
+    .tracks-content {
+        flex-direction: column; /* Stack vertically on small screens */
+    }
+    .track-column:first-child {
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1); /* Add a bottom border instead of right */
+    }
+    /* Place speed menu relative to center on mobile */
+    .speed-dropdown {
+        position: relative;
+        margin-right: 0; /* Remove margin on mobile */
+    }
+}
+</style>
+</head>
+<body>
+
+<div class="hls-player-container">
+<!-- UI element to display the currently loaded stream URL -->
+<div id="url-display" style="position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 0.75rem; color: #fff; background: rgba(0, 0, 0, 0.5); padding: 4px 8px; border-radius: 4px; max-width: 90%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;"></div>
+
+<!-- The main video element - NO controls attribute. --><video id="hls-video" preload="auto"></video>
+
+<!-- Custom Message Box --><div id="message-box" class="message-box" style="display: none;"></div>
+
+<!-- Center Controls Group --><div id="center-controls-group" class="center-controls-group">
+<button id="center-back-10-btn" class="center-seek-btn" title="Rewind 10 seconds">
+<svg viewBox="0 0 24 24" fill="none"></svg>
+</button>
+<button id="center-play-pause-btn" class="center-play-pause-btn">
+<svg viewBox="0 0 24 24" fill="none"></svg>
+</button>
+<button id="center-forward-10-btn" class="center-seek-btn" title="Forward 10 seconds">
+<svg viewBox="0 0 24 24" fill="none"></svg>
+</button>
+</div>
+
+<!-- The overlay for custom controls --><div class="player-controls-overlay">
+
+<!-- Progress Bar and Time Remaining --><div class="progress-bar-container">
+    <div id="progress-bar-wrapper" class="progress-bar-wrapper">
+        <!-- Buffer Track --><div id="buffer-track" class="buffer-track"></div>
+        <input type="range" id="seek-slider" min="0" max="100" value="0">
+    </div>
+    <span id="time-remaining-display" class="time-remaining-display">0:00</span>
+</div>
+
+<!-- Main Control Bar --><div class="controls-bar">
+
+<!-- Left Controls: Play/Pause, Rewind, Forward, VOLUME -->
+<div class="controls-left">
+
+<button id="play-pause-btn" class="control-btn" title="Play/Pause">
+<!-- Play Icon SVG (Initial state: Paused) --><svg id="play-svg" viewBox="0 0 24 24" fill="currentColor">
+<path d="M5 2.7a1 1 0 0 1 1.48-.88l16.93 9.3a1 1 0 0 1 0 1.76l-16.93 9.3A1 1 0 0 1 5 21.31z"/>
+</svg>
+</button>
+
+<button id="back-10-btn" class="control-btn" title="Rewind 10 seconds">
+<svg viewBox="0 0 24 24" fill="currentColor"></svg>
+</button>
+
+<button id="forward-10-btn" class="control-btn" title="Forward 10 seconds">
+<svg viewBox="0 0 24 24" fill="currentColor"></svg>
+</button>
+
+<!-- VOLUME CONTROLS -->
+<div class="volume-controls">
+<button id="volume-btn" class="control-btn" title="Mute/Unmute">
+<!-- Volume Icon SVG (Default High) --><svg id="volume-svg" viewBox="0 0 24 24" fill="currentColor">
+<path fill-rule="evenodd" d="M11 4a1 1 0 0 0-1.7-.7L4.58 8H1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h3.59l4.7 4.7A1 1 0 0 0 11 20zM5.7 9.7 9 6.42V17.6l-3.3-3.3-.29-.29H2v-4h3.41zm11.37-4.77a10 10 0 0 1 0 14.14l-1.41-1.41a8 8 0 0 0 0-11.32zm-2.83 2.83a6 6 0 0 1 0 8.48l-1.41-1.41a4 4 0 0 0 0-5.66z" clip-rule="evenodd"/>
+</svg>
+</button>
+<input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" title="Volume">
+</div>
+
+</div>
+
+<!-- Right Controls: Speed, Tracks (Audio/Subtitles), Fullscreen -->
+<div class="controls-right">
+    
+<!-- Playback Speed Dropdown (NEW MENU) -->
+<div class="speed-dropdown">
+    <button id="speed-btn" class="control-btn" title="Playback Speed">
+        <!-- Playback Speed Icon SVG -->
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <path fill="currentColor" fill-rule="evenodd" d="M19.06 6.27a9.7 9.7 0 0 0-14.12 0 10.8 10.8 0 0 0 0 14.82L3.5 22.47a12.8 12.8 0 0 1 0-17.59 11.7 11.7 0 0 1 17 0 12.8 12.8 0 0 1 0 17.59l-1.44-1.38a10.8 10.8 0 0 0 0-14.82M15 14a3 3 0 1 1-1.7-2.7l3-3 1.4 1.4-3 3q.3.6.3 1.3" clip-rule="evenodd"/>
+        </svg>
+    </button>
+    <div id="speed-menu" class="speed-menu">
+        <!-- Speed options will be inserted here by JavaScript -->
+    </div>
+</div>
+
+<!-- Unified Tracks Dropdown -->
+<div class="tracks-dropdown">
+<button id="tracks-btn" class="control-btn" title="Audio Tracks and Subtitles">
+<!-- Closed Captions Icon SVG --><svg viewBox="0 0 24 24" fill="currentColor">
+<path d="M19 8H5c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2zm0 10H5v-8h14v8zM7 15h3v-2H7v2zm8-2v2h3v-2h-3z"/>
+</svg>
+</button>
+
+<div id="tracks-menu" class="tracks-menu">
+    <div id="tracks-content" class="tracks-content">
+        <!-- Audio and Subtitle columns will be inserted here by JavaScript -->
+    </div>
+</div>
+
+</div>
+
+<button id="fullscreen-btn" class="control-btn" title="Fullscreen">
+<!-- Fullscreen Icon SVG --><svg id="fullscreen-svg" viewBox="0 0 24 24" fill="currentColor">
+<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+</svg>
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// --- DYNAMIC URL LOADING & STATE ---
+const urlParams = new URLSearchParams(window.location.search);
+// Loads the 'url' parameter from the query string, or uses the default HLS stream
+const HLS_URL = urlParams.get('url') || 'https://vidmmo.com/hls/PeTnJxnsuhCOtujX1QVmKSeMtJ9AIc2G/master.m3u8';
+// --- END DYNAMIC URL LOADING & STATE ---
+
+// --- SVG PATH DEFINITIONS (Unchanged) ---
+const PLAY_SVG_INNER = '<path d="M5 2.7a1 1 0 0 1 1.48-.88l16.93 9.3a1 1 0 0 1 0 1.76l-16.93 9.3A1 1 0 0 1 5 21.31z"/>';
+const PAUSE_SVG_INNER = '<path fill-rule="evenodd" d="M4.5 3a.5.5 0 0 0-.5.5v17c0 .28.22.5.5.5h5a.5.5 0 0 0 .5-.5v-17a.5.5 0 0 0-.5-.5zm10 0a.5.5 0 0 0-.5.5v17c0 .28.22.5.5.5h5a.5.5 0 0 0 .5-.5v-17a.5.5 0 0 0-.5-.5z" clip-rule="evenodd"/>';
+const SPEAKER_SVG_INNER = '<path fill-rule="evenodd" d="M11 4a1 1 0 0 0-1.7-.7L4.58 8H1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h3.59l4.7 4.7A1 1 0 0 0 11 20zM5.7 9.7 9 6.42V17.6l-3.3-3.3-.29-.29H2v-4h3.41zm11.37-4.77a10 10 0 0 1 0 14.14l-1.41-1.41a8 8 0 0 0 0-11.32zm-2.83 2.83a6 6 0 0 1 0 8.48l-1.41-1.41a4 4 0 0 0 0-5.66z" clip-rule="evenodd"/>';
+const MUTE_SVG_INNER = '<path fill-rule="evenodd" d="M11 4a1 1 0 0 0-1.7-.7L4.58 8H1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h3.59l4.7 4.7A1 1 0 0 0 11 20zM5.7 9.7 9 6.42V17.6l-3.3-3.3-.29-.29H2v-4h3.41zm9.6 0 2.29 2.3-2.3 2.3 1.42 1.4L19 13.42l2.3 2.3 1.4-1.42-2.28-2.3 2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3-1.42-1.4-2.3 2.28-2.3-2.3z" clip-rule="evenodd"/>';
+const BACK_10_SVG_INNER = '<path fill-rule="evenodd" d="M11.02 2.05A10 10 0 1 1 2 12H0a12 12 0 1 0 5-9.75V1H3v4a1 1 0 0 0 1 1h4V4H6a10 10 0 0 1 5.02-1.95M2 4v3h3v2H1a1 1 0 0 1-1-1V4zm12.13 12q-.88 0-1.53-.42-.64-.44-1-1.22a5 5 0 0 1-.35-1.86q0-1.05.35-1.85.36-.79 1-1.22A2.7 2.7 0 0 1 14.13 9a2.65 2.65 0 0 1 2.52 1.65q.35.79.35 1.85 0 1.07-.35 1.86a3 3 0 0 1-1.01 1.22 2.7 2.7 0 0 1-1.52.42m0-1.35q.59 0 .91-.56.34-.56.34-1.59 0-1.01-.34-1.58-.33-.57-.91-.57-.6 0-.92.57-.34.56-.34 1.58t.34 1.6q.33.54.91.55m-5.53 1.2v-5.13l-1.6.42V9.82l3.2-.8v6.84z" clip-rule="evenodd"/>';
+const FORWARD_10_SVG_INNER = '<path fill-rule="evenodd" d="M6.44 3.69A10 10 0 0 1 18 4h-2v2h4a1 1 0 0 0 1-1V1h-2v1.25A12 12 0 1 0 24 12h-2A10 10 0 1 1 6.44 3.69M22 4v3h-3v2h4a1 1 0 0 0 1-1V4zm-9.4 11.58q.66.42 1.53.42a2.7 2.7 0 0 0 1.5-.42q-.64-.44-1.02-1.22a4.5 4.5 0 0 0-.35-1.85q0-1.05.35-1.85A2.65 2.65 0 0 0 14.13 9a2.7 2.7 0 0 0-1.53.43q-.64.44-1 1.22a4.5 4.5 0 0 0-.35 1.85q0 1.07.35 1.86.36.78 1 1.22m2.44-1.49q-.33.56-.91.56-.6 0-.92-.56-.34-.56-.34-1.59 0-1.01.34-1.58.33-.57.91-.57.6 0 .92.57.34.56.34 1.58t-.34 1.6" clip-rule="evenodd"/>';
+const ENTER_FULLSCREEN_SVG_INNER = '<path fill-rule="evenodd" d="M2 3h7v2H2v4H0V5c0-1.1.9-2 2-2zm15 0h5a2 2 0 0 1 2 2v4h-2V5h-5zm0 16v-5h2v5h5v2h-7a2 2 0 0 1-2-2zm-12 2h7v-2H2v-4H0v4a2 2 0 0 0 2 2z" clip-rule="evenodd"/>';
+const EXIT_FULLSCREEN_SVG_INNER = '<path fill-rule="evenodd" d="M24 8h-5V3h-2v7h7zM0 16h5v5h2v-7H0zm7-6H0V8h5V3h2zm12 11v-5h5v-2h-7v7z" clip-rule="evenodd"/>';
+// --- END SVG PATH DEFINITIONS ---
+
+document.addEventListener('DOMContentLoaded', () => {
+const video = document.getElementById('hls-video');
+
+// --- Elements References ---
+const urlDisplay = document.getElementById('url-display');
+const centerControlsGroup = document.getElementById('center-controls-group');
+const centerBack10Btn = document.getElementById('center-back-10-btn');
+const centerForward10Btn = document.getElementById('center-forward-10-btn');
+const back10Btn = document.getElementById('back-10-btn'); // Bottom control
+const forward10Btn = document.getElementById('forward-10-btn'); // Bottom control
+const playPauseBtn = document.getElementById('play-pause-btn');
+const centerPlayPauseBtn = document.getElementById('center-play-pause-btn');
+const seekSlider = document.getElementById('seek-slider');
+const bufferTrack = document.getElementById('buffer-track'); // Buffer element reference
+const timeRemainingDisplay = document.getElementById('time-remaining-display');
+
+const volumeBtn = document.getElementById('volume-btn');
+const volumeSlider = document.getElementById('volume-slider');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+const container = document.querySelector('.hls-player-container');
+const controlsOverlay = document.querySelector('.player-controls-overlay');
+const msgBox = document.getElementById('message-box');
+
+// NEW: Playback Speed Elements
+const speedBtn = document.getElementById('speed-btn');
+const speedMenu = document.getElementById('speed-menu');
+const SPEED_OPTIONS = [
+    { value: 2.0, label: '2.0x' },
+    { value: 1.5, label: '1.5x' },
+    { value: 1.25, label: '1.25x' },
+    { value: 1.0, label: 'Normal (1.0x)' },
+    { value: 0.75, label: '0.75x' },
+    { value: 0.5, label: '0.5x' }
+];
+
+
+// UNIFIED TRACK ELEMENTS
+const tracksBtn = document.getElementById('tracks-btn');
+const tracksMenu = document.getElementById('tracks-menu');
+const tracksContent = document.getElementById('tracks-content'); // New container for columns
+
+let hls;
+let lastVolume = 1;
+
+// --- Language Mapping for Display (Unchanged) ---
+const LANG_MAP = {
+    'eng': 'English',
+    'spa': 'Spanish',
+    'fra': 'French',
+    'deu': 'German',
+    'jpn': 'Japanese',
+    'kor': 'Korean',
+    'hin': 'Hindi',
+    'und': 'Unknown', // Undefined language code often used by HLS
+};
+
+// Helper function to convert language code to display name (Unchanged)
+const getDisplayName = (langCode, fallback) => {
+    if (!langCode) return fallback;
+
+    const lowerCode = langCode.toLowerCase();
+    
+    if (lowerCode === 'off') return 'Off';
+
+    let name = LANG_MAP[lowerCode];
+
+    if (name) {
+        return name;
+    }
+
+    if (fallback) {
+        return fallback.charAt(0).toUpperCase() + fallback.slice(1);
+    }
+    
+    return langCode.charAt(0).toUpperCase() + langCode.slice(1);
+};
+// --- END Language Mapping ---
+
+
+// --- INACTIVITY TIMER VARIABLES ---
+let lastActivityTime = Date.now();
+const HIDE_DELAY_MS = 3000; // 3 seconds
+// --- END INACTIVITY TIMER VARIABLES ---
+
+
+// --- Utility Functions ---
+const showMessage = (text, duration = 2000) => {
+msgBox.textContent = text;
+msgBox.style.display = 'block';
+setTimeout(() => {
+msgBox.style.display = 'none';
+}, duration);
+};
+
+const formatTime = (seconds) => {
+if (isNaN(seconds) || seconds < 0) return '0:00';
+seconds = Math.floor(seconds);
+const date = new Date(null);
+date.setSeconds(seconds);
+return seconds >= 3600 ? date.toISOString().substr(11, 8) : date.toISOString().substr(14, 5);
+};
+
+const skipBackward = () => {
+video.currentTime = Math.max(0, video.currentTime - 10);
+resetActivityTimer();
+};
+
+const skipForward = () => {
+video.currentTime = Math.min(video.duration, video.currentTime + 10);
+resetActivityTimer();
+};
+
+/**
+ * Posts the current playback status (time, duration, paused) to the parent window
+ * using postMessage, typically when the player is running inside an iframe.
+ */
+const postTimeUpdateToParent = () => {
+    if (window.parent !== window) { // Check if it is running inside an iframe
+        const timeData = {
+            event: 'videoTimeUpdate', // Custom event identifier for the parent
+            currentTime: video.currentTime,
+            duration: video.duration,
+            paused: video.paused
+        };
+        // WARNING: For security, replace '*' with the specific origin of the parent window 
+        // (e.g., 'https://your-parent-site.com') in a production environment.
+        window.parent.postMessage(timeData, '*'); 
+    }
+}
+
+// --- Control Visibility Functions ---
+
+const toggleControlsVisibility = (show) => {
+// Controls must ALWAYS be visible if the video is paused
+if (video.paused || show) {
+controlsOverlay.classList.add('visible');
+centerControlsGroup.classList.add('visible');
+container.classList.remove('cursor-hidden');
+} else {
+// Hide when video is playing AND we are asked to hide
+controlsOverlay.classList.remove('visible');
+centerControlsGroup.classList.remove('visible');
+container.classList.add('cursor-hidden');
+}
+};
+
+const resetActivityTimer = () => {
+lastActivityTime = Date.now();
+toggleControlsVisibility(true); // Show controls on activity
+};
+
+const checkActivity = () => {
+const elapsed = Date.now() - lastActivityTime;
+
+if (!video.paused && elapsed > HIDE_DELAY_MS) {
+toggleControlsVisibility(false);
+} else if (video.paused) {
+toggleControlsVisibility(true);
+lastActivityTime = Date.now();
+}
+};
+
+// Start the periodic check for inactivity (runs every 500ms)
+setInterval(checkActivity, 500);
+
+// --- End Control Visibility Functions ---
+
+const updatePlayPauseIcons = () => {
+// Update icons in all locations
+const playSvgBottom = `<svg viewBox="0 0 24 24" fill="currentColor">${PLAY_SVG_INNER}</svg>`;
+const pauseSvgBottom = `<svg viewBox="0 0 24 24" fill="currentColor">${PAUSE_SVG_INNER}</svg>`;
+const playSvgCenter = `<svg viewBox="0 0 24 24" fill="none">${PLAY_SVG_INNER}</svg>`;
+const pauseSvgCenter = `<svg viewBox="0 0 24 24" fill="none">${PAUSE_SVG_INNER}</svg>`;
+const back10SvgBottom = `<svg viewBox="0 0 24 24" fill="currentColor">${BACK_10_SVG_INNER}</svg>`;
+const forward10SvgBottom = `<svg viewBox="0 0 24 24" fill="currentColor">${FORWARD_10_SVG_INNER}</svg>`;
+const back10SvgCenter = `<svg viewBox="0 0 24 24" fill="none">${BACK_10_SVG_INNER}</svg>`;
+const forward10SvgCenter = `<svg viewBox="0 0 24 24" fill="none">${FORWARD_10_SVG_INNER}</svg>`;
+
+playPauseBtn.innerHTML = video.paused ? playSvgBottom : pauseSvgBottom;
+centerPlayPauseBtn.innerHTML = video.paused ? playSvgCenter : pauseSvgCenter;
+back10Btn.innerHTML = back10SvgBottom;
+forward10Btn.innerHTML = forward10SvgBottom;
+centerBack10Btn.innerHTML = back10SvgBottom;
+centerForward10Btn.innerHTML = forward10SvgBottom;
+
+// Ensure controls are visible when paused
+if (video.paused) {
+toggleControlsVisibility(true);
+}
+};
+
+const updateVolumeIcon = () => {
+const svgContent = (video.muted || video.volume === 0) ? MUTE_SVG_INNER : SPEAKER_SVG_INNER;
+volumeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${svgContent}</svg>`;
+};
+
+const updateFullscreenIcon = () => {
+const enterSvg = ENTER_FULLSCREEN_SVG_INNER;
+const exitSvg = EXIT_FULLSCREEN_SVG_INNER;
+fullscreenBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${document.fullscreenElement || document.webkitFullscreenElement ? exitSvg : enterSvg}</svg>`;
+}
+
+// --- Buffer Display Logic ---
+/**
+ * Updates the buffer track display based on the video's buffered time ranges.
+ */
+const updateBufferDisplay = () => {
+    if (video.duration > 0 && video.buffered.length > 0) {
+        let bufferedEnd = 0;
+        
+        // Find the buffered range that ends furthest ahead of the current playhead
+        for (let i = 0; i < video.buffered.length; i++) {
+            // Check if the range is either before or includes the current time
+            if (video.buffered.start(i) <= video.currentTime) {
+                // Use the largest end point found so far
+                bufferedEnd = Math.max(bufferedEnd, video.buffered.end(i));
+            }
+        }
+        
+        // Calculate percentage width relative to total duration
+        const percent = (bufferedEnd / video.duration) * 100;
+
+        // Apply style to the buffer track element
+        bufferTrack.style.width = `${percent}%`;
+    } else {
+        bufferTrack.style.width = '0%';
+    }
+};
+// --- END Buffer Display Logic ---
+
+
+// --- PLAYBACK SPEED LOGIC UTILITIES (NEW) ---
+
+// Updates the active class on a speed option
+const updateSpeedList = (activeRate) => {
+    const items = speedMenu.querySelectorAll('li');
+    items.forEach(item => {
+        item.classList.remove('active');
+        if (parseFloat(item.dataset.rate) === activeRate) {
+            item.classList.add('active');
+        }
+    });
+};
+
+// Populates the Speed Menu
+const populateSpeedMenu = () => {
+    // Clear existing content
+    speedMenu.innerHTML = ''; 
+
+    const ul = document.createElement('ul');
+
+    SPEED_OPTIONS.forEach(option => {
+        const li = document.createElement('li');
+        li.textContent = option.label;
+        li.dataset.rate = option.value;
+        
+        // Set initial active state
+        if (option.value === 1.0) {
+            li.classList.add('active');
+        }
+        
+        li.addEventListener('click', (e) => {
+            const newRate = parseFloat(e.currentTarget.dataset.rate);
+            video.playbackRate = newRate;
+            updateSpeedList(newRate);
+            speedMenu.classList.remove('open'); // Close menu after selection
+            showMessage(`Speed: ${option.label}`);
+            resetActivityTimer();
+            e.stopPropagation();
+        });
+        ul.appendChild(li);
+    });
+
+    speedMenu.appendChild(ul);
+};
+
+// --- END PLAYBACK SPEED LOGIC ---
+
+
+// --- UNIFIED TRACK LOGIC UTILITIES (Unchanged) ---
+
+// Updates the active class on a specific track type in the unified menu
+const updateUnifiedTrackList = (type, activeId) => {
+const items = tracksContent.querySelectorAll(`li[data-type="${type}"]`);
+
+items.forEach(item => {
+const trackId = parseInt(item.dataset.trackId);
+item.classList.remove('active');
+
+if (trackId === activeId) {
+item.classList.add('active');
+}
+});
+};
+
+// Creates a simple list item
+const createMenuItem = (textContent, type, trackId, active) => {
+    const li = document.createElement('li');
+    li.textContent = textContent;
+    li.dataset.type = type;
+    li.dataset.trackId = trackId;
+    
+    // Apply new styling based on active state
+    if (active) {
+        li.classList.add('active');
+    }
+    return li;
+};
+
+// Populates the entire tracks menu with two columns
+const populateTracksMenu = () => {
+// Clear existing content
+tracksContent.innerHTML = '';
+
+const audioTracks = hls.audioTracks;
+const subtitleTracks = hls.subtitleTracks;
+
+let contentAdded = false;
+
+// --- 1. Audio Tracks Section ---
+const audioColumn = document.createElement('div');
+const audioList = document.createElement('ul');
+audioColumn.className = 'track-column';
+
+if (audioTracks && audioTracks.length > 0) { 
+    contentAdded = true;
+    
+    // Header
+    const audioHeader = document.createElement('div');
+    audioHeader.className = 'menu-header';
+    audioHeader.textContent = 'Audio Tracks';
+    audioColumn.appendChild(audioHeader);
+
+    const activeAudioId = hls.audioTrack;
+
+    audioTracks.forEach((track, index) => {
+        // Use language code for lookup, fallback to name, then default
+        const langCode = track.lang || track.name || 'und';
+        const label = getDisplayName(langCode, track.name || `Audio ${index + 1}`);
+        
+        const isActive = index === activeAudioId;
+        
+        const li = createMenuItem(label, 'audio', index, isActive);
+        
+        // Attaching event listener to the live DOM element
+        li.addEventListener('click', (e) => {
+            hls.audioTrack = index;
+            updateUnifiedTrackList('audio', index);
+            tracksMenu.classList.remove('open'); // Menu closing
+            showMessage(`Audio: ${label}`);
+            resetActivityTimer();
+            e.stopPropagation();
+        });
+        audioList.appendChild(li);
+    });
+    audioColumn.appendChild(audioList);
+}
+
+// --- 2. Subtitle Tracks Section ---
+const subtitleColumn = document.createElement('div');
+const subtitleList = document.createElement('ul');
+subtitleColumn.className = 'track-column';
+
+if (subtitleTracks && subtitleTracks.length > 0) {
+    contentAdded = true;
+
+    // Header
+    const subtitleHeader = document.createElement('div');
+    subtitleHeader.className = 'menu-header';
+    subtitleHeader.textContent = 'Subtitles / CC';
+    subtitleColumn.appendChild(subtitleHeader);
+
+    const activeSubtitleId = hls.subtitleTrack;
+
+    // Add "Off" option (ID: -1)
+    const offLabel = getDisplayName('off', 'Off');
+    const offLi = createMenuItem(offLabel, 'subtitle', -1, activeSubtitleId === -1);
+    offLi.addEventListener('click', (e) => {
+        hls.subtitleTrack = -1;
+        updateUnifiedTrackList('subtitle', -1);
+        tracksMenu.classList.remove('open'); // Menu closing
+        showMessage('Subtitles Off');
+        resetActivityTimer();
+        e.stopPropagation();
+    });
+    subtitleList.appendChild(offLi);
+
+    // Add available tracks
+    subtitleTracks.forEach((track, index) => {
+        // Use language code for lookup, fallback to name, then default
+        const langCode = track.lang || track.name || 'und';
+        const label = getDisplayName(langCode, track.name || `Track ${index + 1}`);
+        
+        const isActive = index === activeSubtitleId;
+
+        const li = createMenuItem(label, 'subtitle', index, isActive);
+        
+        // Attaching event listener to the live DOM element
+        li.addEventListener('click', (e) => {
+            hls.subtitleTrack = index;
+            updateUnifiedTrackList('subtitle', index);
+            tracksMenu.classList.remove('open'); // Menu closing
+            showMessage(`Subtitles: ${label}`);
+            resetActivityTimer();
+            e.stopPropagation();
+        });
+        subtitleList.appendChild(li);
+    });
+    subtitleColumn.appendChild(subtitleList);
+}
+
+// --- 3. Combine into columns ---
+if (contentAdded) {
+    // Only display audio column if there is more than one track or subtitles exist
+    if (audioTracks.length > 1 || subtitleTracks.length > 0) {
+        if (audioColumn.hasChildNodes()) {
+            tracksContent.appendChild(audioColumn);
+        }
+        
+        if (subtitleColumn.hasChildNodes()) {
+            tracksContent.appendChild(subtitleColumn);
+        }
+    }
+}
+
+
+// Hide the button if no tracks are available
+tracksBtn.style.display = contentAdded ? 'block' : 'none';
+};
+// --- END UNIFIED TRACK LOGIC UTILITIES ---
+
+
+// --- HLS.JS Initialization ---
+const initHlsPlayer = () => {
+    // Update the URL display element
+    urlDisplay.textContent = `Source: ${HLS_URL}`;
+
+    if (Hls.isSupported()) {
+        hls = new Hls();
+        hls.loadSource(HLS_URL);
+        hls.attachMedia(video);
+
+        // MANIFEST PARSED: Populate the unified menu
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        // Initial population
+        populateTracksMenu();
+        // Initial buffer update after metadata is available
+        updateBufferDisplay(); 
+        });
+
+        // Update on dynamic track changes
+        hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, populateTracksMenu);
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, populateTracksMenu);
+
+        // Handle updates when a switch occurs internally (e.g., in native fallback mode)
+        hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (event, data) => {
+        updateUnifiedTrackList('subtitle', data.id);
+        });
+
+        hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (event, data) => {
+        updateUnifiedTrackList('audio', data.id);
+        });
+
+        hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+        showMessage(`Fatal HLS Error: ${data.type}. Trying to recover...`, 5000);
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        hls.startLoad();
+        } else {
+        hls.destroy();
+        initHlsPlayer();
+        }
+        }
+        });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = HLS_URL;
+        showMessage('Using native HLS playback (Safari). Track control buttons may be unavailable.', 4000);
+        // Hide button for native playback as control is inconsistent
+        tracksBtn.style.display = 'none';
+    } else {
+        showMessage('Your browser does not support HLS playback.', 5000);
+    }
+};
+
+// --- Main Player Logic ---
+
+// 1. Play/Pause (Called only by the explicit buttons)
+const togglePlayPause = () => {
+video.paused ? video.play() : video.pause();
+resetActivityTimer();
+};
+
+// 2. Mobile UX Tap-to-Toggle Logic
+const handleTap = (e) => {
+// IMPORTANT FIX: If the tap target is any interactive control, exit immediately.
+if (e.target.closest('.control-btn') ||
+e.target.matches('#seek-slider') ||
+e.target.matches('#volume-slider') ||
+e.target.closest('.center-seek-btn') ||
+e.target.closest('.center-play-pause-btn') ||
+e.target.closest('.speed-menu li') || /* Check for speed menu items */
+e.target.closest('.track-column li')) {
+return; // Exit, letting the button's native click handler run
+}
+
+// If the video is paused, a tap always triggers play (standard UX)
+if (video.paused) {
+video.play();
+return;
+}
+
+// If the video is playing, a tap toggles control visibility.
+const isControlsVisible = controlsOverlay.classList.contains('visible');
+
+if (isControlsVisible) {
+// Hide controls immediately (manual override)
+toggleControlsVisibility(false);
+} else {
+// Show controls and reset the 3-second inactivity timer
+resetActivityTimer();
+}
+};
+
+// Helper function to update the progress bar's CSS variable (for red fill)
+const updateSeekProgress = (currentTime, duration) => {
+const percent = (currentTime / duration) * 100;
+// Set the CSS variable to control the linear gradient fill
+seekSlider.style.setProperty('--seek-before-width', `${percent}%`);
+};
+
+// Helper function to update the volume progress bar fill
+const updateVolumeProgress = (volume) => {
+    // Volume is a value between 0 and 1
+    const percent = volume * 100;
+    volumeSlider.style.setProperty('--volume-before-width', `${percent}%`);
+};
+
+// --- Event Listeners and Control Logic ---
+
+// Wire up the new tap handler to the main container
+container.addEventListener('click', handleTap);
+
+// Wire up the explicit play/pause buttons
+playPauseBtn.addEventListener('click', togglePlayPause);
+centerPlayPauseBtn.addEventListener('click', togglePlayPause);
+
+// 3. Seeking
+back10Btn.addEventListener('click', skipBackward);
+forward10Btn.addEventListener('click', skipForward);
+centerBack10Btn.addEventListener('click', skipBackward);
+centerForward10Btn.addEventListener('click', skipForward);
+
+// Handle icons and visibility change on video state change
+video.addEventListener('play', () => {
+updatePlayPauseIcons();
+resetActivityTimer(); // Show controls briefly on play
+});
+video.addEventListener('pause', () => {
+updatePlayPauseIcons();
+toggleControlsVisibility(true); // Always show controls when paused
+});
+
+
+// 4. Time Update and Progress Bar
+video.addEventListener('loadedmetadata', () => {
+seekSlider.max = Math.floor(video.duration);
+timeRemainingDisplay.textContent = formatTime(video.duration);
+updateSeekProgress(video.currentTime, video.duration);
+updateBufferDisplay(); // Initial buffer after metadata load
+});
+
+video.addEventListener('timeupdate', () => {
+const remainingTime = video.duration - video.currentTime;
+
+if (!document.activeElement.matches('#seek-slider')) {
+seekSlider.value = video.currentTime;
+updateSeekProgress(video.currentTime, video.duration);
+}
+
+timeRemainingDisplay.textContent = formatTime(remainingTime);
+updateBufferDisplay(); // Update buffer display on every time update
+
+// MANDATORY: Call the function to post video status to the parent window
+postTimeUpdateToParent();
+});
+
+seekSlider.addEventListener('input', () => {
+// Update the progress fill immediately while dragging
+updateSeekProgress(parseFloat(seekSlider.value), parseFloat(seekSlider.max));
+
+video.currentTime = seekSlider.value;
+const remainingTime = video.duration - video.currentTime;
+timeRemainingDisplay.textContent = formatTime(remainingTime);
+resetActivityTimer(); // Reset timer while seeking
+});
+
+// 5. Volume
+volumeSlider.addEventListener('input', () => {
+video.volume = volumeSlider.value;
+video.muted = video.volume === 0;
+lastVolume = video.volume > 0 ? video.volume : lastVolume;
+updateVolumeIcon();
+resetActivityTimer(); // Reset timer while adjusting volume
+// Update volume progress fill
+updateVolumeProgress(parseFloat(volumeSlider.value));
+});
+
+volumeBtn.addEventListener('click', () => {
+if (video.muted || video.volume === 0) {
+video.volume = lastVolume > 0 ? lastVolume : 0.5;
+video.muted = false;
+} else {
+lastVolume = video.volume;
+video.volume = 0;
+video.muted = true;
+}
+volumeSlider.value = video.volume;
+updateVolumeIcon();
+resetActivityTimer();
+// Update volume progress fill
+updateVolumeProgress(video.volume);
+});
+updateVolumeIcon();
+
+// 6. Playback Speed Menu Toggle
+speedBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Close other menus
+    tracksMenu.classList.remove('open'); 
+    // Toggle speed menu
+    speedMenu.classList.toggle('open');
+    resetActivityTimer();
+});
+
+// 7. Tracks Dropdown Toggle
+tracksBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+// Close other menus
+speedMenu.classList.remove('open');
+// Toggle tracks menu
+tracksMenu.classList.toggle('open');
+resetActivityTimer();
+});
+
+// Close menus if click is outside of the dropdown area
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.tracks-dropdown')) {
+        tracksMenu.classList.remove('open');
+    }
+    if (!e.target.closest('.speed-dropdown')) {
+        speedMenu.classList.remove('open');
+    }
+});
+
+
+// 8. Fullscreen
+fullscreenBtn.addEventListener('click', () => {
+if (document.fullscreenElement || document.webkitFullscreenElement) {
+document.exitFullscreen();
+} else {
+container.requestFullscreen() || container.webkitRequestFullscreen();
+}
+resetActivityTimer();
+});
+
+document.addEventListener('fullscreenchange', updateFullscreenIcon);
+document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+updateFullscreenIcon();
+
+// 9. Activity Listener (Mouse/Touch/Move)
+container.addEventListener('mousemove', resetActivityTimer);
+container.addEventListener('touchstart', resetActivityTimer);
+
+// --- Initial Setup ---
+initHlsPlayer();
+populateSpeedMenu(); // Populate the new speed menu
+updatePlayPauseIcons();
+video.volume = 1;
+updateVolumeIcon();
+// Initialize progress fill
+updateSeekProgress(0, 100);
+// Initialize volume progress fill
+updateVolumeProgress(video.volume);
+// Set initial playback speed (default is 1.0x)
+video.playbackRate = 1.0; 
+});
+</script>
+</body>
+</html>
